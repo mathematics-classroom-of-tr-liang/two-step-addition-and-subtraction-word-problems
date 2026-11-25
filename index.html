@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>兩步驟問題與併式</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Noto+Sans+TC:wght@700;900&display=swap" rel="stylesheet" />
+
+  <style>
+    /* 全域觸控與色彩編碼設定 */
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      font-family: 'Noto Sans TC', sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+      overflow-x: hidden;
+    }
+
+    .font-math {
+      font-family: 'Fredoka', 'Noto Sans TC', sans-serif;
+      letter-spacing: 0.02em;
+    }
+
+    .touch-target {
+      min-width: 48px;
+      min-height: 48px;
+      touch-action: manipulation;
+    }
+
+    .drag-item {
+      touch-action: none;
+      cursor: grab;
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease;
+    }
+
+    .drag-item:active {
+      cursor: grabbing;
+      transform: scale(1.06);
+    }
+
+    .stage-grid {
+      background-color: #ffffff;
+      background-image:
+        linear-gradient(to right, rgba(148, 163, 184, 0.14) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(148, 163, 184, 0.14) 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+
+    .drop-active {
+      transform: scale(1.06) !important;
+      filter: brightness(1.04);
+      box-shadow: 0 0 0 6px rgba(2, 132, 199, 0.35) !important;
+    }
+
+    @keyframes popIn {
+      0% { transform: scale(0.65); opacity: 0.3; }
+      65% { transform: scale(1.12); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .pop-in {
+      animation: popIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    @keyframes shieldSnap {
+      0% { transform: scale(1.42); filter: drop-shadow(0 0 20px rgba(239, 68, 68, 0.95)); }
+      55% { transform: scale(0.9); }
+      82% { transform: scale(1.06); }
+      100% { transform: scale(1); filter: drop-shadow(0 4px 12px rgba(239, 68, 68, 0.35)); }
+    }
+
+    .shield-snap {
+      animation: shieldSnap 0.52s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    @keyframes snapBackPulse {
+      0% { transform: translate(-50%, -50%) scale(1.08); }
+      50% { transform: translate(-50%, -50%) scale(0.94); }
+      100% { transform: translate(-50%, -50%) scale(1); }
+    }
+
+    #floatingDragClone {
+      position: fixed;
+      pointer-events: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%) scale(1.08);
+      filter: drop-shadow(0 14px 24px rgba(15, 23, 42, 0.28));
+      display: none;
+    }
+  </style>
+</head>
+<body class="flex flex-col h-screen overflow-hidden select-none">
+
+  <!-- 頂部題目列：題目切換、大型粗體題目與朗讀鈕、撤銷與重置圖示鈕 -->
+  <header class="bg-white border-b-2 border-[#94a3b8] px-3 md:px-5 py-2.5 shrink-0 z-30">
+    <div class="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-2 shrink-0">
+        <button id="tabBtn-0" type="button" onclick="switchProblem(0)" aria-label="第1題"
+          class="touch-target px-4 py-2 rounded-2xl font-black text-lg md:text-xl border-2 bg-[#0284c7] text-white border-[#0369a1] transition-all flex items-center gap-1.5">
+          <span>1</span>
+          <span id="starMark-0" class="text-amber-300"></span>
+        </button>
+        <button id="tabBtn-1" type="button" onclick="switchProblem(1)" aria-label="第2題"
+          class="touch-target px-4 py-2 rounded-2xl font-black text-lg md:text-xl border-2 bg-slate-100 text-slate-700 border-[#94a3b8] hover:bg-slate-200 transition-all flex items-center gap-1.5">
+          <span>2</span>
+          <span id="starMark-1" class="text-amber-300"></span>
+        </button>
+        <button id="tabBtn-2" type="button" onclick="switchProblem(2)" aria-label="第3題"
+          class="touch-target px-4 py-2 rounded-2xl font-black text-lg md:text-xl border-2 bg-slate-100 text-slate-700 border-[#94a3b8] hover:bg-slate-200 transition-all flex items-center gap-1.5">
+          <span>3</span>
+          <span id="starMark-2" class="text-amber-300"></span>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-2.5 flex-1 min-w-[220px] justify-center">
+        <div id="storyBoard" class="font-black text-xl md:text-2xl lg:text-3xl leading-snug text-center"></div>
+        <button type="button" onclick="readStoryAloud()" aria-label="朗讀"
+          class="touch-target w-12 h-12 rounded-2xl bg-sky-100 hover:bg-sky-200 text-[#0284c7] border-2 border-[#0284c7] flex items-center justify-center shrink-0 transition active:scale-95">
+          <svg viewBox="0 0 24 24" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <button id="undoActionBtn" type="button" onclick="undoLastAction()" aria-label="撤銷" disabled
+          class="touch-target w-12 h-12 rounded-2xl bg-slate-100 hover:bg-slate-200 disabled:opacity-35 disabled:pointer-events-none text-slate-700 border-2 border-[#94a3b8] flex items-center justify-center transition active:scale-95">
+          <svg viewBox="0 0 24 24" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 14L4 9l5-5"></path>
+            <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"></path>
+          </svg>
+        </button>
+        <button type="button" onclick="resetCurrentProblem()" aria-label="重置"
+          class="touch-target w-12 h-12 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 border-2 border-[#94a3b8] flex items-center justify-center transition active:scale-95">
+          <svg viewBox="0 0 24 24" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+            <path d="M3 3v5h5"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主操作舞台：左側表徵區 + 右側算式與括號併式區 -->
+  <main id="mainWorkspace" class="flex-1 relative max-w-[1440px] w-full mx-auto flex flex-col lg:flex-row overflow-hidden">
+    <canvas id="overlayCanvas" class="absolute inset-0 w-full h-full pointer-events-none z-20"></canvas>
+
+    <!-- 左側表徵區（整合具體物與可拖曳表徵） -->
+    <section id="concreteZone" aria-label="表徵區"
+      class="w-full lg:w-[42%] bg-slate-50/90 border-b-2 lg:border-b-0 lg:border-r-2 border-[#94a3b8] p-4 md:p-5 flex flex-col justify-between gap-4 relative z-10 overflow-y-auto">
+    </section>
+
+    <!-- 右側算式併式區 -->
+    <section id="equationZone" aria-label="算式區"
+      class="w-full lg:w-[58%] stage-grid p-4 md:p-6 flex flex-col justify-center items-center relative z-10 overflow-y-auto">
+    </section>
+  </main>
+
+  <!-- 拖曳時的浮動視覺分身 -->
+  <div id="floatingDragClone"></div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      /* ======================================================================
+         1. 題目資料設定（皆以安全 DOM 節點建構，絕不拼接原始碼字串）
+         ====================================================================== */
+      const PROBLEM_LIST = [
+        {
+          id: 0,
+          segments: [
+            { text: '小美有 ', tone: 'plain' },
+            { text: '40', tone: 'sky' },
+            { text: ' 元，買鉛筆花 ', tone: 'plain' },
+            { text: '10', tone: 'amber' },
+            { text: ' 元，買橡皮擦花 ', tone: 'plain' },
+            { text: '5', tone: 'amber' },
+            { text: ' 元，還剩下幾元？', tone: 'plain' }
+          ],
+          spokenText: '小美有40元，買鉛筆花10元，買橡皮擦花5元，還剩下幾元？',
+          slotItems: [
+            { id: 's0-10', value: 10, kind: 'coin', coinDenom: 10, tone: 'amber' },
+            { id: 's0-5', value: 5, kind: 'coin', coinDenom: 5, tone: 'amber' }
+          ],
+          secondRowTokens: [
+            { id: 's0-40', value: 40, kind: 'coin', coinDenom: 40, tone: 'sky' }
+          ],
+          op1: '+',
+          bridgeNum: 15,
+          bridgeSide: 'right',
+          op2: '-',
+          baseNum: 40,
+          finalNum: 25,
+          unit: '元'
+        },
+        {
+          id: 1,
+          segments: [
+            { text: '原本有 ', tone: 'plain' },
+            { text: '18', tone: 'sky' },
+            { text: ' 顆蘋果，吃掉 ', tone: 'plain' },
+            { text: '4', tone: 'amber' },
+            { text: ' 顆又吃掉 ', tone: 'plain' },
+            { text: '2', tone: 'amber' },
+            { text: ' 顆，還剩幾顆？', tone: 'plain' }
+          ],
+          spokenText: '原本有18顆蘋果，吃掉4顆又吃掉2顆，還剩幾顆？',
+          slotItems: [
+            { id: 's1-4', value: 4, kind: 'apple', tone: 'amber' },
+            { id: 's1-2', value: 2, kind: 'apple', tone: 'amber' }
+          ],
+          secondRowTokens: [
+            { id: 's1-18', value: 18, kind: 'apple', tone: 'sky' }
+          ],
+          op1: '+',
+          bridgeNum: 6,
+          bridgeSide: 'right',
+          op2: '-',
+          baseNum: 18,
+          finalNum: 12,
+          unit: '顆'
+        },
+        {
+          id: 2,
+          segments: [
+            { text: '箱子裡有 ', tone: 'plain' },
+            { text: '9', tone: 'amber' },
+            { text: ' 顆紅球和 ', tone: 'plain' },
+            { text: '6', tone: 'amber' },
+            { text: ' 顆藍球，送出 ', tone: 'plain' },
+            { text: '5', tone: 'sky' },
+            { text: ' 顆後，還剩幾顆？', tone: 'plain' }
+          ],
+          spokenText: '箱子裡有9顆紅球和6顆藍球，送出5顆後，還剩幾顆？',
+          slotItems: [
+            { id: 's2-9', value: 9, kind: 'ball', ballColor: '#ef4444', tone: 'amber' },
+            { id: 's2-6', value: 6, kind: 'ball', ballColor: '#0284c7', tone: 'amber' }
+          ],
+          secondRowTokens: [
+            { id: 's2-5', value: 5, kind: 'ball', ballColor: '#0284c7', tone: 'sky' }
+          ],
+          op1: '+',
+          bridgeNum: 15,
+          bridgeSide: 'left',
+          op2: '-',
+          baseNum: 5,
+          finalNum: 10,
+          unit: '顆'
+        }
+      ];
+
+      const SVG_NS = 'http://www.w3.org/2000/svg';
+      let audioCtx = null;
+      let historyStack = [];
+      let dragState = null;
+      let animFrameId = null;
+      let particles = [];
+      let pulseTime = 0;
+
+      const appState = {
+        problemIndex: 0,
+        placedSlots: [null, null],
+        secondRowBasePlaced: false,
+        merged: false,
+        bracketed: false,
+        animationStep: 0,
+        isPlayingSequence: false
+      };
+
+      function getCurrentProblem() {
+        return PROBLEM_LIST[appState.problemIndex];
+      }
+
+      /* ======================================================================
+         2. 音效回饋（Web Audio API，無外部檔案依賴）
+         ====================================================================== */
+      function ensureAudio() {
+        if (!audioCtx) {
+          const Ctx = window.AudioContext || window.webkitAudioContext;
+          if (Ctx) audioCtx = new Ctx();
+        }
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        }
+      }
+
+      function playTone(freq, duration = 0.14, type = 'sine', delay = 0, gainPeak = 0.16) {
+        try {
+          ensureAudio();
+          if (!audioCtx) return;
+          const start = audioCtx.currentTime + delay;
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, start);
+          gain.gain.setValueAtTime(0.001, start);
+          gain.gain.exponentialRampToValueAtTime(gainPeak, start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(start);
+          osc.stop(start + duration + 0.02);
+        } catch (e) {
+          // 忽略受限環境的音訊錯誤
+        }
+      }
+
+      function playPopSound() {
+        playTone(523.25, 0.12, 'triangle', 0, 0.18);
+        playTone(659.25, 0.14, 'triangle', 0.06, 0.16);
+      }
+
+      function playSnapBackSound() {
+        playTone(293.66, 0.12, 'sine', 0, 0.14);
+        playTone(246.94, 0.14, 'sine', 0.06, 0.12);
+      }
+
+      function playMergeSound() {
+        playTone(440, 0.14, 'sine', 0, 0.16);
+        playTone(554.37, 0.14, 'sine', 0.07, 0.16);
+        playTone(659.25, 0.2, 'sine', 0.14, 0.18);
+      }
+
+      function playShieldSound() {
+        playTone(392, 0.12, 'triangle', 0, 0.2);
+        playTone(587.33, 0.14, 'triangle', 0.06, 0.2);
+        playTone(783.99, 0.24, 'sine', 0.12, 0.22);
+      }
+
+      function playSuccessChime() {
+        [523.25, 659.25, 783.99, 1046.5].forEach((f, idx) => {
+          playTone(f, 0.22, 'triangle', idx * 0.09, 0.18);
+        });
+      }
+
+      function readStoryAloud() {
+        try {
+          playPopSound();
+          const prob = getCurrentProblem();
+          if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const utter = new SpeechSynthesisUtterance(prob.spokenText);
+            utter.lang = 'zh-TW';
+            utter.rate = 0.92;
+            window.speechSynthesis.speak(utter);
+          }
+        } catch (e) {
+          // 忽略語音合成錯誤
+        }
+      }
+
+      /* ======================================================================
+         3. SVG 教具建構器（硬幣、蘋果、球體）
+         ====================================================================== */
+      function createSvgElement(tag, attrs = {}) {
+        const el = document.createElementNS(SVG_NS, tag);
+        Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, String(v)));
+        return el;
+      }
+
+      function createCoinSvg(denom, isSky = false) {
+        const svg = createSvgElement('svg', {
+          viewBox: '0 0 64 64',
+          class: 'w-12 h-12 md:w-14 md:h-14 shrink-0'
+        });
+        const fill = isSky ? '#0284c7' : (denom === 10 ? '#f59e0b' : '#fbbf24');
+        const stroke = isSky ? '#0369a1' : '#b45309';
+        svg.appendChild(createSvgElement('circle', {
+          cx: 32, cy: 32, r: 28,
+          fill: fill, stroke: stroke, 'stroke-width': 3.5
+        }));
+        svg.appendChild(createSvgElement('circle', {
+          cx: 32, cy: 32, r: 21,
+          fill: 'none', stroke: '#ffffff', 'stroke-opacity': 0.55,
+          'stroke-width': 2, 'stroke-dasharray': '4 3'
+        }));
+        const label = createSvgElement('text', {
+          x: 32, y: 39,
+          'text-anchor': 'middle',
+          fill: '#ffffff',
+          'font-size': String(denom).length >= 2 ? '20' : '23',
+          'font-weight': '900',
+          'font-family': 'Fredoka, Noto Sans TC, sans-serif'
+        });
+        label.textContent = String(denom);
+        svg.appendChild(label);
+        return svg;
+      }
+
+      function createAppleSvg(dimmed = false) {
+        const svg = createSvgElement('svg', {
+          viewBox: '0 0 64 64',
+          class: 'w-11 h-11 md:w-12 md:h-12 shrink-0 transition-opacity duration-300',
+          style: dimmed ? 'opacity: 0.22;' : 'opacity: 1;'
+        });
+        svg.appendChild(createSvgElement('path', {
+          d: 'M32 16 C32 9, 38 6, 43 7 C42 12, 37 16, 32 16 Z',
+          fill: '#10b981'
+        }));
+        svg.appendChild(createSvgElement('path', {
+          d: 'M32 17 L32 10',
+          stroke: '#78350f', 'stroke-width': 3, 'stroke-linecap': 'round'
+        }));
+        svg.appendChild(createSvgElement('path', {
+          d: 'M32 20 C21 15, 10 22, 12 36 C14 49, 24 57, 32 54 C40 57, 50 49, 52 36 C54 22, 43 15, 32 20 Z',
+          fill: '#ef4444', stroke: '#b91c1c', 'stroke-width': 2.5
+        }));
+        svg.appendChild(createSvgElement('ellipse', {
+          cx: 22, cy: 30, rx: 4, ry: 7,
+          transform: 'rotate(-18 22 30)',
+          fill: '#ffffff', 'fill-opacity': 0.35
+        }));
+        return svg;
+      }
+
+      function createBallSvg(color, dimmed = false) {
+        const svg = createSvgElement('svg', {
+          viewBox: '0 0 64 64',
+          class: 'w-11 h-11 md:w-12 md:h-12 shrink-0 transition-opacity duration-300',
+          style: dimmed ? 'opacity: 0.22;' : 'opacity: 1;'
+        });
+        const strokeColor = color === '#ef4444' ? '#b91c1c' : '#0369a1';
+        svg.appendChild(createSvgElement('circle', {
+          cx: 32, cy: 32, r: 24,
+          fill: color, stroke: strokeColor, 'stroke-width': 3
+        }));
+        svg.appendChild(createSvgElement('circle', {
+          cx: 23, cy: 22, r: 6,
+          fill: '#ffffff', 'fill-opacity': 0.38
+        }));
+        return svg;
+      }
+
+      function createSlotVisualSvg(item) {
+        if (item.kind === 'coin') return createCoinSvg(item.coinDenom, item.tone === 'sky');
+        if (item.kind === 'apple') return createAppleSvg(false);
+        return createBallSvg(item.ballColor || '#f59e0b', false);
+      }
+
+      /* ======================================================================
+         4. 歷史紀錄與狀態管理（撤銷 / 重置 / 切題）
+         ====================================================================== */
+      function snapshotState() {
+        return {
+          problemIndex: appState.problemIndex,
+          placedSlots: [...appState.placedSlots],
+          secondRowBasePlaced: appState.secondRowBasePlaced,
+          merged: appState.merged,
+          bracketed: appState.bracketed,
+          animationStep: appState.animationStep,
+          isPlayingSequence: false
+        };
+      }
+
+      function pushHistory() {
+        historyStack.push(snapshotState());
+        updateControlButtons();
+      }
+
+      function undoLastAction() {
+        if (historyStack.length === 0 || appState.isPlayingSequence) return;
+        const prev = historyStack.pop();
+        appState.problemIndex = prev.problemIndex;
+        appState.placedSlots = [...prev.placedSlots];
+        appState.secondRowBasePlaced = prev.secondRowBasePlaced;
+        appState.merged = prev.merged;
+        appState.bracketed = prev.bracketed;
+        appState.animationStep = prev.animationStep;
+        appState.isPlayingSequence = false;
+        playPopSound();
+        renderAll();
+      }
+
+      function resetCurrentProblem() {
+        if (appState.isPlayingSequence) return;
+        appState.placedSlots = [null, null];
+        appState.secondRowBasePlaced = false;
+        appState.merged = false;
+        appState.bracketed = false;
+        appState.animationStep = 0;
+        appState.isPlayingSequence = false;
+        historyStack = [];
+        playPopSound();
+        renderAll();
+      }
+
+      function switchProblem(idx) {
+        if (idx === appState.problemIndex || appState.isPlayingSequence) return;
+        appState.problemIndex = idx;
+        appState.placedSlots = [null, null];
+        appState.secondRowBasePlaced = false;
+        appState.merged = false;
+        appState.bracketed = false;
+        appState.animationStep = 0;
+        appState.isPlayingSequence = false;
+        historyStack = [];
+        playPopSound();
+        renderAll();
+      }
+
+      function updateControlButtons() {
+        const undoBtn = document.getElementById('undoActionBtn');
+        if (undoBtn) {
+          undoBtn.disabled = historyStack.length === 0 || appState.isPlayingSequence;
+        }
+        for (let i = 0; i < PROBLEM_LIST.length; i++) {
+          const tab = document.getElementById(`tabBtn-${i}`);
+          const star = document.getElementById(`starMark-${i}`);
+          if (tab) {
+            const active = i === appState.problemIndex;
+            tab.className = active
+              ? 'touch-target px-4 py-2 rounded-2xl font-black text-lg md:text-xl border-2 bg-[#0284c7] text-white border-[#0369a1] transition-all flex items-center gap-1.5'
+              : 'touch-target px-4 py-2 rounded-2xl font-black text-lg md:text-xl border-2 bg-slate-100 text-slate-700 border-[#94a3b8] hover:bg-slate-200 transition-all flex items-center gap-1.5';
+          }
+          if (star) {
+            const done = (i === appState.problemIndex && appState.animationStep === 2);
+            star.textContent = done ? '★' : '';
+          }
+        }
+      }
+
+      /* ======================================================================
+         5. 操作動作處理（精準拖曳填入、等號左邊往下拉替換、括號防護罩、播放計算）
+         ====================================================================== */
+      function placeItemInSlot(slotIndex, itemId) {
+        if (appState.isPlayingSequence || appState.merged) return;
+        const prob = getCurrentProblem();
+        const item = prob.slotItems.find(x => x.id === itemId);
+        if (!item) return;
+
+        const existingIdx = appState.placedSlots.findIndex(x => x && x.id === item.id);
+        if (existingIdx !== -1 && existingIdx !== slotIndex) {
+          pushHistory();
+          appState.placedSlots[existingIdx] = null;
+          appState.placedSlots[slotIndex] = item;
+          playPopSound();
+          renderAll();
+          return;
+        }
+
+        if (appState.placedSlots[slotIndex]?.id === item.id) return;
+
+        pushHistory();
+        appState.placedSlots[slotIndex] = item;
+        playPopSound();
+        spawnBurstAtElement(`[data-slot-target="${slotIndex}"]`, '#f59e0b');
+        renderAll();
+      }
+
+      function placeSecondRowBaseToken(tokenId) {
+        if (appState.isPlayingSequence || appState.secondRowBasePlaced) return;
+        const prob = getCurrentProblem();
+        const token = prob.secondRowTokens.find(x => x.id === tokenId);
+        if (!token) return;
+
+        pushHistory();
+        appState.secondRowBasePlaced = true;
+        playPopSound();
+        spawnBurstAtElement('#secondRowBaseSlot', '#0284c7');
+        renderAll();
+      }
+
+      function performMerge() {
+        if (appState.isPlayingSequence || appState.merged) return;
+        if (!appState.placedSlots[0] || !appState.placedSlots[1]) return;
+
+        pushHistory();
+        appState.merged = true;
+        playMergeSound();
+        spawnBurstAtElement('#bridgeDropTarget', '#f59e0b');
+        renderAll();
+      }
+
+      function applyBracketShield() {
+        if (appState.isPlayingSequence || !appState.merged || appState.bracketed) return;
+
+        pushHistory();
+        appState.bracketed = true;
+        playShieldSound();
+        spawnBurstAtElement('#bracketTargetZone', '#ef4444');
+        renderAll();
+      }
+
+      function runCalculationSequence() {
+        if (!appState.bracketed || !appState.secondRowBasePlaced || appState.isPlayingSequence) return;
+        if (appState.animationStep === 2) {
+          appState.animationStep = 0;
+        }
+
+        pushHistory();
+        appState.isPlayingSequence = true;
+        renderAll();
+
+        setTimeout(() => {
+          appState.animationStep = 1;
+          playMergeSound();
+          spawnBurstAtElement('#secondStepCalcFocus', '#f59e0b');
+          renderAll();
+
+          setTimeout(() => {
+            appState.animationStep = 2;
+            appState.isPlayingSequence = false;
+            playSuccessChime();
+            spawnBurstAtElement('#secondStepResultBox', '#10b981');
+            renderAll();
+          }, 850);
+        }, 550);
+      }
+
+      /* ======================================================================
+         6. 畫面渲染：頂部題目、左側表徵區、右側算式併式區
+         ====================================================================== */
+      function renderStoryBoard() {
+        const prob = getCurrentProblem();
+        const board = document.getElementById('storyBoard');
+        if (!board) return;
+        board.textContent = '';
+
+        prob.segments.forEach(seg => {
+          const span = document.createElement('span');
+          span.textContent = seg.text;
+          if (seg.tone === 'sky') {
+            span.className = 'px-2 py-0.5 mx-0.5 rounded-xl bg-[#e0f2fe] text-[#0284c7] font-math';
+          } else if (seg.tone === 'amber') {
+            span.className = 'px-2 py-0.5 mx-0.5 rounded-xl bg-[#fef3c7] text-[#b45309] font-math';
+          } else {
+            span.className = 'text-slate-900';
+          }
+          board.appendChild(span);
+        });
+      }
+
+      function renderConcreteZone() {
+        const prob = getCurrentProblem();
+        const zone = document.getElementById('concreteZone');
+        zone.textContent = '';
+
+        // 表徵區上半部：所有可拖曳表徵卡片（不加呼吸暗示或懸浮手指）
+        const trayCard = document.createElement('div');
+        trayCard.className = 'bg-white rounded-3xl border-2 border-[#94a3b8] p-4 flex flex-col gap-3';
+
+        const trayRow = document.createElement('div');
+        trayRow.className = 'flex items-center justify-around gap-3 flex-wrap';
+
+        // 先算表徵卡片
+        prob.slotItems.forEach((item) => {
+          const isUsed = appState.placedSlots.some(s => s && s.id === item.id);
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.dataset.draggableItem = item.id;
+          btn.setAttribute('aria-label', String(item.value));
+
+          btn.className = [
+            'drag-item touch-target relative flex items-center gap-2.5 px-4 py-3 rounded-3xl border-2 transition-all',
+            isUsed
+              ? 'bg-slate-100 border-slate-300 opacity-45 cursor-default'
+              : 'bg-[#fef3c7] border-[#f59e0b] hover:bg-amber-200'
+          ].join(' ');
+
+          btn.appendChild(createSlotVisualSvg(item));
+
+          const numSpan = document.createElement('span');
+          numSpan.className = 'font-math font-bold text-3xl md:text-4xl text-[#b45309]';
+          numSpan.textContent = String(item.value);
+          btn.appendChild(numSpan);
+
+          if (!isUsed) {
+            attachDragBehavior(btn, {
+              type: 'slot-item',
+              itemId: item.id,
+              renderGhost: () => {
+                const ghost = document.createElement('div');
+                ghost.className = 'flex items-center gap-2 px-4 py-2.5 rounded-3xl bg-[#fef3c7] border-2 border-[#f59e0b]';
+                ghost.appendChild(createSlotVisualSvg(item));
+                const gNum = document.createElement('span');
+                gNum.className = 'font-math font-bold text-3xl text-[#b45309]';
+                gNum.textContent = String(item.value);
+                ghost.appendChild(gNum);
+                return ghost;
+              }
+            });
+          }
+
+          trayRow.appendChild(btn);
+        });
+
+        // 再算總數／基準量表徵卡片（置於表徵區，由學生拖曳至第二排）
+        prob.secondRowTokens.forEach((token) => {
+          const isUsed = appState.secondRowBasePlaced;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.dataset.draggableBase = token.id;
+          btn.setAttribute('aria-label', String(token.value));
+
+          btn.className = [
+            'drag-item touch-target relative flex items-center gap-2.5 px-4 py-3 rounded-3xl border-2 transition-all',
+            isUsed
+              ? 'bg-slate-100 border-slate-300 opacity-45 cursor-default'
+              : 'bg-[#e0f2fe] border-[#0284c7] hover:bg-sky-200'
+          ].join(' ');
+
+          btn.appendChild(createSlotVisualSvg(token));
+
+          const numSpan = document.createElement('span');
+          numSpan.className = 'font-math font-bold text-3xl md:text-4xl text-[#0284c7]';
+          numSpan.textContent = String(token.value);
+          btn.appendChild(numSpan);
+
+          if (!isUsed) {
+            attachDragBehavior(btn, {
+              type: 'second-base',
+              tokenId: token.id,
+              renderGhost: () => {
+                const ghost = document.createElement('div');
+                ghost.className = 'flex items-center gap-2 px-4 py-2.5 rounded-3xl bg-[#e0f2fe] border-2 border-[#0284c7]';
+                ghost.appendChild(createSlotVisualSvg(token));
+                const gNum = document.createElement('span');
+                gNum.className = 'font-math font-bold text-3xl text-[#0284c7]';
+                gNum.textContent = String(token.value);
+                ghost.appendChild(gNum);
+                return ghost;
+              }
+            });
+          }
+
+          trayRow.appendChild(btn);
+        });
+
+        trayCard.appendChild(trayRow);
+        zone.appendChild(trayCard);
+
+        // 表徵區下半部：具體物情境呈現
+        const visualBox = document.createElement('div');
+        visualBox.className = 'flex-1 min-h-[160px] bg-white rounded-3xl border-2 border-[#94a3b8] p-4 flex flex-wrap items-center justify-center gap-3 content-center';
+
+        if (prob.id === 0) {
+          const placed0 = appState.placedSlots[0] !== null;
+          const placed1 = appState.placedSlots[1] !== null;
+          const finished = appState.animationStep === 2;
+
+          for (let i = 0; i < 4; i++) {
+            const coin = createCoinSvg(10, true);
+            const isRemoved = finished && i >= 2;
+            coin.style.opacity = isRemoved ? '0.2' : '1';
+            coin.style.transform = isRemoved ? 'scale(0.85)' : 'scale(1)';
+            coin.style.transition = 'all 0.35s ease';
+            visualBox.appendChild(coin);
+          }
+
+          if (placed0 && placed1 && !finished) {
+            const spentBox = document.createElement('div');
+            spentBox.className = 'flex items-center gap-1 px-2.5 py-1 rounded-2xl bg-[#fef3c7] border-2 border-[#f59e0b]';
+            spentBox.appendChild(createCoinSvg(10, false));
+            spentBox.appendChild(createCoinSvg(5, false));
+            visualBox.appendChild(spentBox);
+          }
+
+          const badge = document.createElement('div');
+          badge.className = 'font-math font-bold text-2xl md:text-3xl px-4 py-1 rounded-2xl text-white ' + (
+            finished ? 'bg-[#10b981] pop-in' : 'bg-[#0284c7]'
+          );
+          badge.textContent = finished ? '25 元' : '40 元';
+          visualBox.appendChild(badge);
+        } else if (prob.id === 1) {
+          const finished = appState.animationStep === 2;
+          for (let i = 0; i < 18; i++) {
+            const dimmed = finished && i >= 12;
+            visualBox.appendChild(createAppleSvg(dimmed));
+          }
+          const badge = document.createElement('div');
+          badge.className = 'font-math font-bold text-2xl md:text-3xl px-4 py-1 rounded-2xl text-white ' + (
+            finished ? 'bg-[#10b981] pop-in' : 'bg-[#0284c7]'
+          );
+          badge.textContent = finished ? '12 顆' : '18 顆';
+          visualBox.appendChild(badge);
+        } else {
+          const finished = appState.animationStep === 2;
+          for (let i = 0; i < 9; i++) {
+            visualBox.appendChild(createBallSvg('#ef4444', finished && i < 3));
+          }
+          for (let i = 0; i < 6; i++) {
+            visualBox.appendChild(createBallSvg('#0284c7', finished && i < 2));
+          }
+          const badge = document.createElement('div');
+          badge.className = 'font-math font-bold text-2xl md:text-3xl px-4 py-1 rounded-2xl text-white ' + (
+            finished ? 'bg-[#10b981] pop-in' : 'bg-[#fef3c7] text-[#b45309] border-2 border-[#f59e0b]'
+          );
+          badge.textContent = finished ? '10 顆' : '15 顆';
+          visualBox.appendChild(badge);
+        }
+
+        zone.appendChild(visualBox);
+      }
+
+      function createNumBadge(val, tone, extraClass = '') {
+        const el = document.createElement('div');
+        const palette = {
+          sky: 'bg-[#e0f2fe] text-[#0284c7] border-[#0284c7]',
+          amber: 'bg-[#fef3c7] text-[#b45309] border-[#f59e0b]',
+          emerald: 'bg-[#d1fae5] text-[#047857] border-[#10b981]',
+          slate: 'bg-white text-slate-900 border-[#94a3b8]'
+        };
+        el.className = `font-math font-bold text-3xl md:text-4xl min-w-[64px] h-[64px] px-3 rounded-2xl border-2 flex items-center justify-center ${palette[tone] || palette.slate} ${extraClass}`;
+        el.textContent = String(val);
+        return el;
+      }
+
+      function createOpSymbol(opText) {
+        const el = document.createElement('span');
+        el.className = 'font-math font-bold text-3xl md:text-4xl text-slate-700 px-1 select-none';
+        el.textContent = opText;
+        return el;
+      }
+
+      function renderEquationZone() {
+        const prob = getCurrentProblem();
+        const zone = document.getElementById('equationZone');
+        zone.textContent = '';
+
+        const stack = document.createElement('div');
+        stack.className = 'w-full max-w-[760px] flex flex-col items-center gap-4';
+
+        const n0 = prob.slotItems[0].value;
+        const n1 = prob.slotItems[1].value;
+        const p0 = appState.placedSlots[0];
+        const p1 = appState.placedSlots[1];
+        const bothPlaced = Boolean(p0 && p1);
+        const twoStepsCompleted = bothPlaced && appState.secondRowBasePlaced;
+
+        // 第一排：先算算式（合併後仍保留在畫面上，與再算、併式並列對照）
+        const firstRow = document.createElement('div');
+        firstRow.className = 'w-full bg-white rounded-3xl border-2 border-[#94a3b8] px-5 py-3.5 flex flex-wrap items-center justify-center gap-2.5';
+
+        const firstRowPrefix = document.createElement('span');
+        firstRowPrefix.className = 'font-black text-xl md:text-2xl text-slate-600 mr-1 select-none';
+        firstRowPrefix.textContent = '先算：';
+        firstRow.appendChild(firstRowPrefix);
+
+        // 等號左邊整組先算算式容器：完成兩格填入後，直接從等號左邊往下拉替換黃色橋樑數
+        const leftSideGroup = document.createElement('div');
+        leftSideGroup.id = 'leftEquationGroup';
+        leftSideGroup.className = [
+          'flex items-center gap-2 px-3 py-1.5 rounded-2xl transition-all',
+          (twoStepsCompleted && !appState.merged) ? 'drag-item bg-amber-50/90 border-2 border-[#f59e0b]' : ''
+        ].join(' ');
+
+        [0, 1].forEach((slotIdx, idx) => {
+          if (idx === 1) {
+            leftSideGroup.appendChild(createOpSymbol(prob.op1));
+          }
+          const placed = appState.placedSlots[slotIdx];
+          const slotBox = document.createElement('div');
+          slotBox.dataset.slotTarget = String(slotIdx);
+
+          slotBox.className = [
+            'font-math font-bold text-3xl md:text-4xl min-w-[64px] h-[64px] px-3 rounded-2xl border-2 border-dashed flex items-center justify-center transition-all',
+            placed
+              ? 'bg-[#fef3c7] text-[#b45309] border-solid border-[#f59e0b]'
+              : 'bg-amber-50/70 text-amber-600 border-[#f59e0b]'
+          ].join(' ');
+          slotBox.textContent = placed ? String(placed.value) : '?';
+
+          leftSideGroup.appendChild(slotBox);
+        });
+
+        if (twoStepsCompleted && !appState.merged) {
+          attachDragBehavior(leftSideGroup, {
+            type: 'merge-expr',
+            renderGhost: () => {
+              const g = document.createElement('div');
+              g.className = 'flex items-center gap-2 px-4 py-2.5 rounded-3xl bg-[#fef3c7] border-2 border-[#f59e0b] font-math font-bold text-3xl text-[#b45309]';
+              g.textContent = `${n0} ${prob.op1} ${n1}`;
+              return g;
+            }
+          });
+        }
+
+        firstRow.appendChild(leftSideGroup);
+        firstRow.appendChild(createOpSymbol('='));
+
+        const bridge1 = createNumBadge(
+          bothPlaced ? prob.bridgeNum : '?',
+          'amber',
+          bothPlaced ? 'pop-in' : 'opacity-65'
+        );
+        firstRow.appendChild(bridge1);
+
+        stack.appendChild(firstRow);
+
+        // 第二排：再算算式（播放計算與最終答案動畫皆在此列進行，完成後呈現完整算式與答案）
+        const secondStepRow = document.createElement('div');
+        secondStepRow.className = 'w-full bg-white rounded-3xl border-2 border-[#94a3b8] px-5 py-3.5 flex flex-wrap items-center justify-center gap-2.5';
+
+        const secondRowPrefix = document.createElement('span');
+        secondRowPrefix.className = 'font-black text-xl md:text-2xl text-slate-600 mr-1 select-none';
+        secondRowPrefix.textContent = '再算：';
+        secondStepRow.appendChild(secondRowPrefix);
+
+        const buildStep2BaseSlot = () => {
+          if (appState.secondRowBasePlaced) {
+            return createNumBadge(prob.baseNum, 'sky', 'pop-in');
+          }
+          const placeholder = document.createElement('div');
+          placeholder.id = 'secondRowBaseSlot';
+          placeholder.dataset.acceptBase = 'true';
+          placeholder.className = 'font-math font-bold text-3xl md:text-4xl min-w-[64px] h-[64px] px-3 rounded-2xl border-2 border-dashed border-[#0284c7] bg-sky-50/70 text-[#0284c7] flex items-center justify-center transition-all';
+          placeholder.textContent = '?';
+          return placeholder;
+        };
+
+        const step2Base = buildStep2BaseSlot();
+        const step2Op = createOpSymbol(prob.op2);
+        const step2Bridge = createNumBadge(
+          bothPlaced ? prob.bridgeNum : '?',
+          'amber',
+          [
+            bothPlaced ? '' : 'opacity-65',
+            appState.animationStep === 1 ? 'shield-snap ring-4 ring-amber-300' : ''
+          ].filter(Boolean).join(' ')
+        );
+        step2Bridge.id = 'secondStepCalcFocus';
+
+        if (prob.bridgeSide === 'right') {
+          secondStepRow.appendChild(step2Base);
+          secondStepRow.appendChild(step2Op);
+          secondStepRow.appendChild(step2Bridge);
+        } else {
+          secondStepRow.appendChild(step2Bridge);
+          secondStepRow.appendChild(step2Op);
+          secondStepRow.appendChild(step2Base);
+        }
+
+        secondStepRow.appendChild(createOpSymbol('='));
+
+        const readyToPlay = appState.merged && appState.bracketed && appState.secondRowBasePlaced;
+        const step2ResultBox = document.createElement('div');
+        step2ResultBox.id = 'secondStepResultBox';
+        if (appState.animationStep === 2) {
+          step2ResultBox.className = 'font-math font-bold text-3xl md:text-4xl min-w-[74px] h-[64px] px-4 rounded-2xl bg-[#10b981] text-white border-2 border-[#047857] flex items-center justify-center pop-in';
+          step2ResultBox.textContent = String(prob.finalNum);
+        } else if (readyToPlay) {
+          const playBtn = document.createElement('button');
+          playBtn.type = 'button';
+          playBtn.id = 'playSequenceBtn';
+          playBtn.setAttribute('aria-label', '播放');
+          playBtn.className = 'touch-target w-[72px] h-[64px] rounded-2xl bg-[#10b981] hover:bg-emerald-600 text-white border-2 border-[#047857] flex items-center justify-center transition active:scale-95';
+          playBtn.appendChild(createSvgElement('polygon', {
+            points: '24,18 50,34 24,50',
+            fill: 'currentColor'
+          }));
+          playBtn.addEventListener('click', () => runCalculationSequence());
+          step2ResultBox.appendChild(playBtn);
+        } else {
+          step2ResultBox.appendChild(createNumBadge('?', 'slate', 'opacity-55'));
+        }
+        secondStepRow.appendChild(step2ResultBox);
+
+        stack.appendChild(secondStepRow);
+
+        // 第三排：併式主舞台（完成先算與再算後才跳出，並保留完整併式：例如 40 - ( 10 + 5 ) = 25）
+        if (twoStepsCompleted || appState.merged) {
+          const secondRow = document.createElement('div');
+          secondRow.className = 'w-full bg-white rounded-3xl border-2 border-[#94a3b8] px-5 py-4 flex flex-wrap items-center justify-center gap-2.5 relative pop-in';
+
+          const mergedRowPrefix = document.createElement('span');
+          mergedRowPrefix.className = 'font-black text-xl md:text-2xl text-slate-600 mr-1 select-none';
+          mergedRowPrefix.textContent = '併式：';
+          secondRow.appendChild(mergedRowPrefix);
+
+          const buildBridgeSlot = () => {
+            if (!appState.merged) {
+              const target = createNumBadge(
+                bothPlaced ? prob.bridgeNum : '?',
+                'amber',
+                bothPlaced ? '' : 'opacity-65'
+              );
+              target.id = 'bridgeDropTarget';
+              return target;
+            }
+
+            // 已合併：始終呈現 n0 op1 n1 與括號狀態，不縮成中間結果
+            const exprBox = document.createElement('div');
+            exprBox.id = 'mergedExprBox';
+            exprBox.className = 'relative flex items-center gap-1.5 px-2.5 py-1 rounded-2xl transition-all';
+
+            const showBracket = appState.bracketed;
+
+            const leftParen = document.createElement('span');
+            leftParen.className = [
+              'font-math font-bold text-4xl md:text-5xl transition-all select-none',
+              showBracket ? 'text-[#ef4444] shield-snap' : 'text-slate-300 opacity-35'
+            ].join(' ');
+            leftParen.textContent = '(';
+
+            const innerGroup = document.createElement('div');
+            innerGroup.id = 'bracketTargetZone';
+            innerGroup.className = [
+              'flex items-center gap-1.5 px-2.5 py-1 rounded-2xl border-2 transition-all',
+              showBracket
+                ? 'bg-[#fee2e2]/70 border-[#ef4444] shield-snap'
+                : 'bg-[#fef3c7] border-[#f59e0b]'
+            ].join(' ');
+
+            innerGroup.appendChild(createNumBadge(n0, 'amber'));
+            innerGroup.appendChild(createOpSymbol(prob.op1));
+            innerGroup.appendChild(createNumBadge(n1, 'amber'));
+
+            const rightParen = document.createElement('span');
+            rightParen.className = [
+              'font-math font-bold text-4xl md:text-5xl transition-all select-none',
+              showBracket ? 'text-[#ef4444] shield-snap' : 'text-slate-300 opacity-35'
+            ].join(' ');
+            rightParen.textContent = ')';
+
+            exprBox.appendChild(leftParen);
+            exprBox.appendChild(innerGroup);
+            exprBox.appendChild(rightParen);
+
+            return exprBox;
+          };
+
+          const buildBaseSlot = () => {
+            if (appState.secondRowBasePlaced) {
+              const badge = createNumBadge(prob.baseNum, 'sky', 'pop-in');
+              badge.id = 'secondRowBaseSlot';
+              return badge;
+            }
+            const placeholder = document.createElement('div');
+            placeholder.dataset.acceptBase = 'true';
+            placeholder.className = 'font-math font-bold text-3xl md:text-4xl min-w-[64px] h-[64px] px-3 rounded-2xl border-2 border-dashed border-[#0284c7] bg-sky-50/70 text-[#0284c7] flex items-center justify-center transition-all';
+            placeholder.textContent = '?';
+            return placeholder;
+          };
+
+          const baseBadge = buildBaseSlot();
+          const op2Sym = createOpSymbol(prob.op2);
+          const bridgeSlot = buildBridgeSlot();
+
+          if (prob.bridgeSide === 'right') {
+            secondRow.appendChild(baseBadge);
+            secondRow.appendChild(op2Sym);
+            secondRow.appendChild(bridgeSlot);
+          } else {
+            secondRow.appendChild(bridgeSlot);
+            secondRow.appendChild(op2Sym);
+            secondRow.appendChild(baseBadge);
+          }
+
+          secondRow.appendChild(createOpSymbol('='));
+
+          const resultBox = document.createElement('div');
+          resultBox.id = 'finalResultBox';
+          if (appState.animationStep === 2) {
+            resultBox.className = 'font-math font-bold text-3xl md:text-4xl min-w-[74px] h-[64px] px-4 rounded-2xl bg-[#10b981] text-white border-2 border-[#047857] flex items-center justify-center pop-in';
+            resultBox.textContent = String(prob.finalNum);
+          } else {
+            resultBox.appendChild(createNumBadge('?', 'slate', 'opacity-55'));
+          }
+
+          secondRow.appendChild(resultBox);
+          stack.appendChild(secondRow);
+        }
+
+        // 括號表徵（合併完成後可拖曳套上先算算式，無額外提示特效）
+        if (appState.merged && !appState.bracketed) {
+          const shieldWrap = document.createElement('div');
+          shieldWrap.className = 'flex items-center justify-center gap-4 mt-1';
+
+          const shieldBtn = document.createElement('button');
+          shieldBtn.type = 'button';
+          shieldBtn.id = 'bracketShieldBtn';
+          shieldBtn.setAttribute('aria-label', '( )');
+          shieldBtn.className = 'drag-item touch-target relative px-7 py-3 rounded-3xl bg-[#fee2e2] border-2 border-[#ef4444] text-[#dc2626] font-math font-bold text-3xl md:text-4xl flex items-center gap-3 transition active:scale-95';
+
+          const pLeft = document.createElement('span');
+          pLeft.textContent = '(';
+          const pRight = document.createElement('span');
+          pRight.textContent = ')';
+          shieldBtn.appendChild(pLeft);
+          shieldBtn.appendChild(pRight);
+
+          attachDragBehavior(shieldBtn, {
+            type: 'bracket-shield',
+            renderGhost: () => {
+              const g = document.createElement('div');
+              g.className = 'px-6 py-2.5 rounded-3xl bg-[#fee2e2] border-2 border-[#ef4444] text-[#dc2626] font-math font-bold text-4xl';
+              g.textContent = '(   )';
+              return g;
+            }
+          });
+
+          shieldWrap.appendChild(shieldBtn);
+          stack.appendChild(shieldWrap);
+        }
+
+        // 完成後提供「下一題」按鈕
+        if (appState.animationStep === 2 && appState.problemIndex < PROBLEM_LIST.length - 1) {
+          const nextBtn = document.createElement('button');
+          nextBtn.type = 'button';
+          nextBtn.setAttribute('aria-label', '下一題');
+          nextBtn.className = 'touch-target mt-1 px-7 py-3 rounded-2xl bg-[#0284c7] hover:bg-sky-700 text-white font-black text-2xl border-2 border-[#0369a1] flex items-center gap-2 pop-in transition active:scale-95';
+          nextBtn.appendChild(createSvgElement('path', {
+            d: 'M5 12h14M13 5l7 7-7 7',
+            stroke: 'currentColor',
+            'stroke-width': '3',
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round',
+            fill: 'none'
+          }));
+          nextBtn.addEventListener('click', () => switchProblem(appState.problemIndex + 1));
+          stack.appendChild(nextBtn);
+        }
+
+        zone.appendChild(stack);
+      }
+
+      /* ======================================================================
+         7. 統一指標/觸控拖曳系統（含精準目標範圍限制與錯誤跳回原位動畫）
+         ====================================================================== */
+      function attachDragBehavior(el, payload) {
+        el.addEventListener('pointerdown', (e) => {
+          if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
+          if (appState.isPlayingSequence) return;
+
+          const rect = el.getBoundingClientRect();
+          const originX = rect.left + rect.width / 2;
+          const originY = rect.top + rect.height / 2;
+
+          const ghostEl = document.getElementById('floatingDragClone');
+          ghostEl.textContent = '';
+          ghostEl.appendChild(payload.renderGhost());
+          ghostEl.style.transition = 'none';
+          ghostEl.style.display = 'block';
+          ghostEl.style.left = `${e.clientX}px`;
+          ghostEl.style.top = `${e.clientY}px`;
+
+          dragState = {
+            payload,
+            sourceEl: el,
+            originX,
+            originY,
+            startX: e.clientX,
+            startY: e.clientY,
+            moved: false,
+            activeTarget: null
+          };
+        });
+      }
+
+      function findDropTargetAt(clientX, clientY, type) {
+        const targets = [];
+        if (type === 'slot-item') {
+          document.querySelectorAll('[data-slot-target]').forEach(el => targets.push(el));
+        } else if (type === 'second-base') {
+          document.querySelectorAll('[data-accept-base="true"]').forEach(el => targets.push(el));
+        } else if (type === 'merge-expr') {
+          const b = document.getElementById('bridgeDropTarget');
+          if (b && !appState.merged && appState.placedSlots[0] && appState.placedSlots[1] && appState.secondRowBasePlaced) {
+            targets.push(b);
+          }
+        } else if (type === 'bracket-shield') {
+          const z = document.getElementById('bracketTargetZone');
+          if (z && appState.merged && !appState.bracketed) {
+            targets.push(z);
+          }
+        }
+
+        for (const el of targets) {
+          const rect = el.getBoundingClientRect();
+          const pad = 12;
+          if (
+            clientX >= rect.left - pad &&
+            clientX <= rect.right + pad &&
+            clientY >= rect.top - pad &&
+            clientY <= rect.bottom + pad
+          ) {
+            return el;
+          }
+        }
+        return null;
+      }
+
+      function snapGhostBackToOrigin(ghostEl, state) {
+        playSnapBackSound();
+        ghostEl.style.transition = 'left 0.24s cubic-bezier(0.22, 1, 0.36, 1), top 0.24s cubic-bezier(0.22, 1, 0.36, 1)';
+        ghostEl.style.left = `${state.originX}px`;
+        ghostEl.style.top = `${state.originY}px`;
+
+        if (state.sourceEl) {
+          state.sourceEl.style.transform = 'scale(1.06)';
+          setTimeout(() => {
+            if (state.sourceEl) state.sourceEl.style.transform = '';
+          }, 240);
+        }
+
+        setTimeout(() => {
+          ghostEl.style.display = 'none';
+          ghostEl.style.transition = 'none';
+          ghostEl.textContent = '';
+        }, 250);
+      }
+
+      window.addEventListener('pointermove', (e) => {
+        if (!dragState) return;
+        const dx = e.clientX - dragState.startX;
+        const dy = e.clientY - dragState.startY;
+        if (Math.hypot(dx, dy) > 8) {
+          dragState.moved = true;
+        }
+
+        const ghostEl = document.getElementById('floatingDragClone');
+        ghostEl.style.left = `${e.clientX}px`;
+        ghostEl.style.top = `${e.clientY}px`;
+
+        const hit = findDropTargetAt(e.clientX, e.clientY, dragState.payload.type);
+        if (dragState.activeTarget && dragState.activeTarget !== hit) {
+          dragState.activeTarget.classList.remove('drop-active');
+        }
+        if (hit) {
+          hit.classList.add('drop-active');
+        }
+        dragState.activeTarget = hit;
+      });
+
+      window.addEventListener('pointerup', (e) => {
+        if (!dragState) return;
+        const currentDrag = dragState;
+        dragState = null;
+
+        const ghostEl = document.getElementById('floatingDragClone');
+        if (currentDrag.activeTarget) {
+          currentDrag.activeTarget.classList.remove('drop-active');
+        }
+
+        const hit = findDropTargetAt(e.clientX, e.clientY, currentDrag.payload.type);
+        if (currentDrag.moved && hit) {
+          ghostEl.style.display = 'none';
+          ghostEl.textContent = '';
+
+          if (currentDrag.payload.type === 'slot-item') {
+            const slotIdx = Number(hit.dataset.slotTarget);
+            placeItemInSlot(slotIdx, currentDrag.payload.itemId);
+          } else if (currentDrag.payload.type === 'second-base') {
+            placeSecondRowBaseToken(currentDrag.payload.tokenId);
+          } else if (currentDrag.payload.type === 'merge-expr') {
+            performMerge();
+          } else if (currentDrag.payload.type === 'bracket-shield') {
+            applyBracketShield();
+          }
+        } else if (currentDrag.moved) {
+          snapGhostBackToOrigin(ghostEl, currentDrag);
+        } else {
+          ghostEl.style.display = 'none';
+          ghostEl.textContent = '';
+        }
+      });
+
+      /* ======================================================================
+         8. Canvas 動態導引弧線與粒子特效
+         ====================================================================== */
+      function spawnBurstAtElement(selector, color) {
+        const el = document.querySelector(selector);
+        const workspace = document.getElementById('mainWorkspace');
+        if (!el || !workspace) return;
+        const eRect = el.getBoundingClientRect();
+        const wRect = workspace.getBoundingClientRect();
+        const cx = eRect.left - wRect.left + eRect.width / 2;
+        const cy = eRect.top - wRect.top + eRect.height / 2;
+
+        for (let i = 0; i < 18; i++) {
+          const angle = (Math.PI * 2 * i) / 18 + (Math.random() - 0.5) * 0.3;
+          const speed = 2.2 + Math.random() * 3.8;
+          particles.push({
+            x: cx,
+            y: cy,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - 1,
+            r: 4 + Math.random() * 4,
+            color,
+            alpha: 1,
+            life: 1
+          });
+        }
+      }
+
+      function resizeCanvas() {
+        const canvas = document.getElementById('overlayCanvas');
+        const workspace = document.getElementById('mainWorkspace');
+        if (!canvas || !workspace) return;
+        const dpr = window.devicePixelRatio || 1;
+        const w = workspace.clientWidth;
+        const h = workspace.clientHeight;
+        canvas.width = Math.floor(w * dpr);
+        canvas.height = Math.floor(h * dpr);
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      function renderOverlayCanvas() {
+        const canvas = document.getElementById('overlayCanvas');
+        const workspace = document.getElementById('mainWorkspace');
+        if (!canvas || !workspace) return;
+        const ctx = canvas.getContext('2d');
+        const w = workspace.clientWidth;
+        const h = workspace.clientHeight;
+        ctx.clearRect(0, 0, w, h);
+
+        pulseTime += 0.05;
+
+        // 僅在「先算與再算都完成後，把第一排等號左邊往下拉替換黃色橋樑數」時呈現 Canvas 導引軌跡
+        const bothPlaced = Boolean(appState.placedSlots[0] && appState.placedSlots[1]);
+        const twoStepsCompleted = bothPlaced && appState.secondRowBasePlaced;
+        const canMergeDown = twoStepsCompleted && !appState.merged && !dragState?.moved;
+        if (canMergeDown) {
+          const srcEl = document.getElementById('leftEquationGroup');
+          const dstEl = document.getElementById('bridgeDropTarget');
+          if (srcEl && dstEl) {
+            const wRect = workspace.getBoundingClientRect();
+            const sRect = srcEl.getBoundingClientRect();
+            const dRect = dstEl.getBoundingClientRect();
+
+            const x1 = sRect.left - wRect.left + sRect.width / 2;
+            const y1 = sRect.top - wRect.top + sRect.height - 6;
+            const x2 = dRect.left - wRect.left + dRect.width / 2;
+            const y2 = dRect.top - wRect.top + 6;
+            const cx = (x1 + x2) / 2;
+            const cy = (y1 + y2) / 2;
+
+            ctx.save();
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 4;
+            ctx.setLineDash([10, 8]);
+            ctx.lineDashOffset = -pulseTime * 28;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.quadraticCurveTo(cx, cy, x2, y2);
+            ctx.stroke();
+
+            const angle = Math.atan2(y2 - cy, x2 - cx);
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#f59e0b';
+            ctx.beginPath();
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(x2 - 14 * Math.cos(angle - 0.45), y2 - 14 * Math.sin(angle - 0.45));
+            ctx.lineTo(x2 - 14 * Math.cos(angle + 0.45), y2 - 14 * Math.sin(angle + 0.45));
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+
+        // 繪製回饋粒子
+        particles = particles.filter(p => p.life > 0);
+        particles.forEach(p => {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += 0.12;
+          p.life -= 0.032;
+          p.alpha = Math.max(0, p.life);
+
+          ctx.save();
+          ctx.globalAlpha = p.alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        });
+
+        animFrameId = requestAnimationFrame(renderOverlayCanvas);
+      }
+
+      /* ======================================================================
+         9. 總體渲染與初始化
+         ====================================================================== */
+      function renderAll() {
+        renderStoryBoard();
+        renderConcreteZone();
+        renderEquationZone();
+        updateControlButtons();
+      }
+
+      window.addEventListener('resize', () => {
+        resizeCanvas();
+      });
+
+      window.addEventListener('DOMContentLoaded', () => {
+        resizeCanvas();
+        renderAll();
+        if (!animFrameId) {
+          renderOverlayCanvas();
+        }
+      });
+
+      window.switchProblem = switchProblem;
+      window.readStoryAloud = readStoryAloud;
+      window.undoLastAction = undoLastAction;
+      window.resetCurrentProblem = resetCurrentProblem;
+    })();
+  </script>
+</body>
+</html>
